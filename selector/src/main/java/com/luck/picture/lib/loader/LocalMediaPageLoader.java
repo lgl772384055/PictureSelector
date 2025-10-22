@@ -235,6 +235,40 @@ public final class LocalMediaPageLoader extends IBridgeMediaLoader {
     }
 
     @Override
+    public void loadInBackground(Context context, Uri uri,
+                                 OnQueryDataResultListener<LocalMedia> query) {
+        PictureThreadUtils.executeByIo(new PictureThreadUtils.SimpleTask<ArrayList<LocalMedia>>() {
+            @Override
+            public ArrayList<LocalMedia> doInBackground() {
+                ArrayList<LocalMedia> media = new ArrayList<>();
+                try {
+                    Cursor data = context.getContentResolver().query(uri, PROJECTION, null, null, null);
+                    if (data != null) {
+                        if (data.getCount() > 0) {
+                            data.moveToFirst();
+                            do {
+                                LocalMedia localMedia = parseLocalMedia(data, false);
+                                media.add(localMedia);
+                            } while (data.moveToNext());
+                        }
+                        data.close();
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+                return media;
+            }
+
+            @Override
+            public void onSuccess(ArrayList<LocalMedia> result) {
+                if (query != null) {
+                    query.onComplete(result, false);
+                }
+            }
+        });
+    }
+
+    @Override
     public void loadOnlyInAppDirAllMedia(OnQueryAlbumListener<LocalMediaFolder> query) {
         PictureThreadUtils.executeByIo(new PictureThreadUtils.SimpleTask<LocalMediaFolder>() {
 

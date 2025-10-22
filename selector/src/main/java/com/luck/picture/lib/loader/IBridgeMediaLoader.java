@@ -113,6 +113,14 @@ public abstract class IBridgeMediaLoader {
      */
     public abstract void loadPageMediaData(long bucketId, int page, int pageSize, OnQueryDataResultListener<LocalMedia> query);
 
+    /**
+     * An synchronous method for loading media in the background.
+     *
+     * @param context   The context.
+     * @param uri       The uri of the media.
+     * @param query     The callback.
+     */
+    public abstract void loadInBackground(Context context, Uri uri, OnQueryDataResultListener<LocalMedia> query);
 
     /**
      * query specified contents

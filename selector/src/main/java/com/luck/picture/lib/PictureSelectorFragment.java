@@ -18,6 +18,9 @@ import androidx.constraintlayout.widget.ConstraintLayout;
 import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.PickVisualMediaRequest;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.recyclerview.widget.SimpleItemAnimator;
 
 import com.luck.picture.lib.adapter.PictureImageGridAdapter;
@@ -113,6 +116,9 @@ public class PictureSelectorFragment extends PictureCommonFragment
     private AlbumListPopWindow albumListPopWindow;
 
     private SlideSelectTouchListener mDragSelectTouchListener;
+
+    private ActivityResultLauncher<PickVisualMediaRequest> mPickerLauncher;
+    private ActivityResultLauncher<PickVisualMediaRequest> mMultiPickerLauncher;
 
     public static PictureSelectorFragment newInstance() {
         PictureSelectorFragment fragment = new PictureSelectorFragment();
@@ -237,6 +243,12 @@ public class PictureSelectorFragment extends PictureCommonFragment
         super.onViewCreated(view, savedInstanceState);
         reStartSavedInstance(savedInstanceState);
         isMemoryRecycling = savedInstanceState != null;
+        mPickerLauncher =
+                registerForActivityResult(new ActivityResultContracts.PickVisualMedia(),
+                        this::onPickerResult);
+        mMultiPickerLauncher =
+                registerForActivityResult(new ActivityResultContracts.PickMultipleVisualMedia(),
+                        this::onMultiPickerResult);
         tvDataEmpty = view.findViewById(R.id.tv_data_empty);
         completeSelectView = view.findViewById(R.id.ps_complete_select);
         titleBar = view.findViewById(R.id.title_bar);
@@ -310,6 +322,47 @@ public class PictureSelectorFragment extends PictureCommonFragment
                         onExitPictureSelector();
                     } else {
                         dispatchTransformResult();
+                    }
+                }
+            });
+        }
+    }
+
+    private void launchPhotoPicker() {
+        ActivityResultContracts.PickVisualMedia.VisualMediaType mediaType;
+        if (selectorConfig.chooseMode == SelectMimeType.ofImage()) {
+            mediaType = ActivityResultContracts.PickVisualMedia.ImageOnly.INSTANCE;
+        } else if (selectorConfig.chooseMode == SelectMimeType.ofVideo()) {
+            mediaType = ActivityResultContracts.PickVisualMedia.VideoOnly.INSTANCE;
+        } else {
+            mediaType = ActivityResultContracts.PickVisualMedia.ImageAndVideo.INSTANCE;
+        }
+        if (selectorConfig.selectionMode == SelectModeConfig.MULTIPLE) {
+            mMultiPickerLauncher.launch(new PickVisualMediaRequest.Builder().setMediaType(mediaType).build());
+        } else {
+            mPickerLauncher.launch(new PickVisualMediaRequest.Builder().setMediaType(mediaType).build());
+        }
+    }
+
+    private void onPickerResult(android.net.Uri uri) {
+        if (uri != null) {
+            onPickerResult(java.util.Collections.singletonList(uri));
+        }
+    }
+
+    private void onMultiPickerResult(java.util.List<android.net.Uri> uris) {
+        if (uris != null && !uris.isEmpty()) {
+            onPickerResult(uris);
+        }
+    }
+
+    private void onPickerResult(java.util.List<android.net.Uri> uris) {
+        for (android.net.Uri uri : uris) {
+            mLoader.loadInBackground(getContext(), uri, new OnQueryDataResultListener<LocalMedia>() {
+                @Override
+                public void onComplete(ArrayList<LocalMedia> result, boolean isHasMore) {
+                    if (!result.isEmpty()) {
+                        dispatchCameraMediaResult(result.get(0));
                     }
                 }
             });
@@ -425,26 +478,30 @@ public class PictureSelectorFragment extends PictureCommonFragment
 
 
     private void requestLoadData() {
-        mAdapter.setDisplayCamera(isDisplayCamera);
-        if (PermissionChecker.isCheckReadStorage(selectorConfig.chooseMode, getContext())) {
-            beginLoadData();
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            launchPhotoPicker();
         } else {
-            String[] readPermissionArray = PermissionConfig.getReadPermissionArray(getAppContext(), selectorConfig.chooseMode);
-            onPermissionExplainEvent(true, readPermissionArray);
-            if (selectorConfig.onPermissionsEventListener != null) {
-                onApplyPermissionsEvent(PermissionEvent.EVENT_SOURCE_DATA, readPermissionArray);
+            mAdapter.setDisplayCamera(isDisplayCamera);
+            if (PermissionChecker.isCheckReadStorage(selectorConfig.chooseMode, getContext())) {
+                beginLoadData();
             } else {
-                PermissionChecker.getInstance().requestPermissions(this, readPermissionArray, new PermissionResultCallback() {
-                    @Override
-                    public void onGranted() {
-                        beginLoadData();
-                    }
+                String[] readPermissionArray = PermissionConfig.getReadPermissionArray(getAppContext(), selectorConfig.chooseMode);
+                onPermissionExplainEvent(true, readPermissionArray);
+                if (selectorConfig.onPermissionsEventListener != null) {
+                    onApplyPermissionsEvent(PermissionEvent.EVENT_SOURCE_DATA, readPermissionArray);
+                } else {
+                    PermissionChecker.getInstance().requestPermissions(this, readPermissionArray, new PermissionResultCallback() {
+                        @Override
+                        public void onGranted() {
+                            beginLoadData();
+                        }
 
-                    @Override
-                    public void onDenied() {
-                        handlePermissionDenied(readPermissionArray);
-                    }
-                });
+                        @Override
+                        public void onDenied() {
+                            handlePermissionDenied(readPermissionArray);
+                        }
+                    });
+                }
             }
         }
     }
