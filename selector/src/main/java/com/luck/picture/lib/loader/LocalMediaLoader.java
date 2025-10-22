@@ -207,23 +207,58 @@ public final class LocalMediaLoader extends IBridgeMediaLoader {
         PictureThreadUtils.executeByIo(new PictureThreadUtils.SimpleTask<ArrayList<LocalMedia>>() {
             @Override
             public ArrayList<LocalMedia> doInBackground() {
-                ArrayList<LocalMedia> media = new ArrayList<>();
-                try {
-                    Cursor data = context.getContentResolver().query(uri, PROJECTION, null, null, null);
-                    if (data != null) {
-                        if (data.getCount() > 0) {
-                            data.moveToFirst();
-                            do {
-                                LocalMedia localMedia = parseLocalMedia(data, false);
-                                media.add(localMedia);
-                            } while (data.moveToNext());
-                        }
-                        data.close();
-                    }
-                } catch (Exception e) {
-                    e.printStackTrace();
+                ArrayList<LocalMedia> result = new ArrayList<>();
+                String mimeType = context.getContentResolver().getType(uri);
+                if (mimeType == null) {
+                    return result;
                 }
-                return media;
+                LocalMedia media = LocalMedia.create();
+                media.setPath(uri.toString());
+                media.setRealPath(uri.toString());
+                media.setMimeType(mimeType);
+                media.setChooseModel(getConfig().chooseMode);
+
+                try (Cursor cursor = context.getContentResolver().query(uri, null, null, null, null)) {
+                    if (cursor != null && cursor.moveToFirst()) {
+                        int displayNameIndex = cursor.getColumnIndex(android.provider.MediaStore.MediaColumns.DISPLAY_NAME);
+                        if (displayNameIndex != -1) {
+                            media.setFileName(cursor.getString(displayNameIndex));
+                        }
+                        int sizeIndex = cursor.getColumnIndex(android.provider.MediaStore.MediaColumns.SIZE);
+                        if(sizeIndex != -1) {
+                            media.setSize(cursor.getLong(sizeIndex));
+                        }
+                    }
+                }
+
+                if (com.luck.picture.lib.config.PictureMimeType.isHasVideo(mimeType)) {
+                    android.media.MediaMetadataRetriever retriever = new android.media.MediaMetadataRetriever();
+                    try {
+                        retriever.setDataSource(context, uri);
+                        String durationStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION);
+                        media.setDuration(durationStr != null ? Long.parseLong(durationStr) : 0);
+                        String widthStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH);
+                        media.setWidth(widthStr != null ? Integer.parseInt(widthStr) : 0);
+                        String heightStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT);
+                        media.setHeight(heightStr != null ? Integer.parseInt(heightStr) : 0);
+                    } catch(Exception e) {
+                        e.printStackTrace();
+                    } finally {
+                        retriever.release();
+                    }
+                } else if (com.luck.picture.lib.config.PictureMimeType.isHasImage(mimeType)) {
+                    try {
+                        android.graphics.BitmapFactory.Options options = new android.graphics.BitmapFactory.Options();
+                        options.inJustDecodeBounds = true;
+                        android.graphics.BitmapFactory.decodeStream(context.getContentResolver().openInputStream(uri), null, options);
+                        media.setWidth(options.outWidth);
+                        media.setHeight(options.outHeight);
+                    } catch(Exception e) {
+                        e.printStackTrace();
+                    }
+                }
+                result.add(media);
+                return result;
             }
 
             @Override

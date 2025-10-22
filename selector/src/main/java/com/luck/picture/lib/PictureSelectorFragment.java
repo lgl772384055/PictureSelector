@@ -357,16 +357,41 @@ public class PictureSelectorFragment extends PictureCommonFragment
     }
 
     private void onPickerResult(java.util.List<android.net.Uri> uris) {
+        final ArrayList<LocalMedia> selectedMedia = new ArrayList<>();
+        final java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(uris.size());
+
         for (android.net.Uri uri : uris) {
             mLoader.loadInBackground(getContext(), uri, new OnQueryDataResultListener<LocalMedia>() {
                 @Override
                 public void onComplete(ArrayList<LocalMedia> result, boolean isHasMore) {
                     if (!result.isEmpty()) {
-                        dispatchCameraMediaResult(result.get(0));
+                        selectedMedia.add(result.get(0));
                     }
+                    latch.countDown();
                 }
             });
         }
+
+        new Thread(() -> {
+            try {
+                latch.await();
+                requireActivity().runOnUiThread(() -> {
+                    if (selectorConfig.selectionMode == SelectModeConfig.SINGLE) {
+                        selectorConfig.selectedResult.clear();
+                        if (!selectedMedia.isEmpty()) {
+                            selectorConfig.selectedResult.add(selectedMedia.get(0));
+                        }
+                        dispatchTransformResult();
+                    } else {
+                        selectorConfig.selectedResult.clear();
+                        selectorConfig.selectedResult.addAll(selectedMedia);
+                        onExitPictureSelector();
+                    }
+                });
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }).start();
     }
 
 
